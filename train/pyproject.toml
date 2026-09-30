@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xgbooster-train"
+version = "0.1.0"
+description = "Python training side of the xgbooster risk-score model"
+requires-python = ">=3.12"
+dependencies = [
+    "xgboost==3.4.1",
+    "numpy>=2,<3",
+    "optuna>=4",
+]
+
+[tool.setuptools]
+packages = ["xgbooster_train"]

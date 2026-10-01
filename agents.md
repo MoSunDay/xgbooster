@@ -14,6 +14,7 @@ Commit: f2e6dee
   - 两侧唯一耦合点:`models/` 制品目录 = `models/<name>/<version>/{model.ubj, manifest.json, holdout.csv}`;`manifest.json` 的 `feature_schema` 是特征语义单一事实来源(Python 写入,Rust schema 驱动提取)
   - 环境约束备注:xgboost==3.4.1(pinned,wheel 内 libxgboost.so 提取至 `infer/lib/`);`train/pyproject.toml` 为声明式规格,实际运行用仓库根 `.venv` + `PYTHONPATH=train`
 - 推理硬化:`XGBOOSTER_ADMIN_TOKEN`/`XGBOOSTER_RATE_LIMIT_RPS`/`XGBOOSTER_RATE_BURST`/`XGBOOSTER_MAX_INFLIGHT`/`XGBOOSTER_STRICT_VERSION` 环境变量控制鉴权、限流、并发上限与严格版本门禁;绑定非回环地址时启动 guard 要求鉴权 + 限流配置齐备,否则拒绝启动。
+- 远端与提交约定:origin=git@github.com:MoSunDay/xgbooster.git,推送走 SSH(github.com 经 socks5h 127.0.0.1:1080 代理;本环境无 HTTPS 凭证,HTTPS push 会无提示挂起);提交作者统一为 MoSunDay <MoSunDay@users.noreply.github.com>;82MB 的 infer/lib/libxgboost.so 已进 git 历史(GitHub 大文件警告,移除需 LFS 或历史重写);本地分支 backup/pre-owner-rewrite 为作者重写前历史,确认后可删。
 
 ## 模块索引
 

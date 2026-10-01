@@ -21,6 +21,7 @@ Commit: f2e6dee
 - `train/xgbooster_train/`:训练管线。入口 `train.py`(`PYTHONPATH=train .venv/bin/python -m xgbooster_train.train --models-dir models [--trials 12]`)。
 - `infer/src/`:推理服务。`ffi.rs`(libxgboost C API 薄封装)、`features.rs`(manifest 解析 + schema 驱动 JSON→特征向量)、`registry.rs`(多模型多版本扫描/解析/热替换)、`guard.rs`(令牌桶限流+并发上限)与 `throttle.rs`(warn 日志限频)、`predict.rs`(判断入口纯函数)、`http.rs`(axum 路由)、`main.rs`(组装)。
 - `infer/tests/consistency.rs` + `tests/consistency/run.sh`:Python↔Rust 预测一致性(4000 行 holdout 对拍,容差 1e-6)与 HTTP 冒烟。
+- `tests/e2e/`:端到端契约与运维语义套件(`run.sh` 编排):`http_contract.sh` 验证 /models 结构、版本钉扎与 latest 解析、7 种 400 分支及提取 notes 内容与顺序;`reload_gates.sh` 在 mktemp 制品副本上验证热增/热删 reload 换血、xgboost_version 门禁(500 保旧、strict 拒启/非 strict 放行)与限流令牌恢复;`lib.sh` 为共享助手。
 - `infer/lib/`:从 pinned wheel 提取的 libxgboost.so 及其伴随库(勿手改)。
 
 ## 相关文档

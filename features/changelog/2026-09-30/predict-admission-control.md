@@ -1,5 +1,7 @@
 # /predict 准入控制与遗留加固
 
+Commit: f2e6dee
+
 公网暴露前评审清单的第二轮补齐:/predict 限流与并发上限、warn 日志限频、strict 版本门禁开关,并把非回环启动 guard 从"仅要求 admin token"扩展到"同时要求限流配置"。
 
 ## 背景

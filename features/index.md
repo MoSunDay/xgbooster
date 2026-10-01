@@ -9,7 +9,7 @@ Commit: f2e6dee
   - 推理服务:`infer/target/release/xgbooster-infer --models-dir models --lib infer/lib/libxgboost.so [--addr 127.0.0.1:8080]`
   - HTTP:`GET /models`、`POST /predict {"model":"risk_score[@version]","features":{...}}`、`POST /admin/reload`
   - 环境变量:`XGBOOSTER_ADMIN_TOKEN`(admin 鉴权 token)、`XGBOOSTER_RATE_LIMIT_RPS`(/predict 令牌桶速率,float >0 启用)、`XGBOOSTER_RATE_BURST`(突发容量,默认 max(1, rps))、`XGBOOSTER_MAX_INFLIGHT`(/predict 并发上限)、`XGBOOSTER_STRICT_VERSION`(manifest 缺 xgboost_version 时拒绝加载的严格门禁)
-  - 端到端验证:`bash tests/consistency/run.sh`
+  - 端到端验证:`bash tests/consistency/run.sh`(构建+对拍+HTTP 冒烟)、`bash tests/e2e/run.sh`(HTTP 契约、热重载换血、版本门禁故障路径、限流恢复)
   - 规则层 / LLM 难例级联:仍为规划,未实现。
 
 ## changelog

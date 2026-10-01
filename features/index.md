@@ -1,6 +1,6 @@
 # features
 
-Commit: main 已创建首次提交(本轮变更集入库)
+Commit: f2e6dee
 
 ## 能力组
 
@@ -14,6 +14,4 @@ Commit: main 已创建首次提交(本轮变更集入库)
 
 ## changelog
 
-- 2026-09-30: [XGBoost 训练→制品→Rust FFI 推理全链路 MVP](changelog/2026-09-30/xgboost-inference-mvp.md)
-- 2026-09-30: [推理侧加固 + 训练侧指标修复](changelog/2026-09-30/inference-hardening.md)
-- 2026-09-30: [/predict 准入控制与遗留加固](changelog/2026-09-30/predict-admission-control.md)
+变更时间线归档于 [changelog/](changelog/) 目录(按日期分目录,每条变更含背景、影响面与验证记录)。

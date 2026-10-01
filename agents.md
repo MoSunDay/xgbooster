@@ -1,6 +1,6 @@
 # agents
 
-Commit: 首次提交已创建,main 基线建立
+Commit: f2e6dee
 
 > 状态说明:首个实现已落地(XGBoost 训练→制品→Rust FFI 推理全链路 MVP),以下概述已按实际实现复核修正。级联架构中的规则层与 LLM 难例层仍为规划。
 

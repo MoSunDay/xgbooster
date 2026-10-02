@@ -199,10 +199,13 @@ with open(path, "w") as fh:
     fh.write("\n")
 PYEOF
 
-if XGBOOSTER_STRICT_VERSION=1 "$BIN" --models-dir "$STRICT_MODELS" --lib "$LIB_PATH" \
-  --addr "$AUX_ADDR" >"$WORK/strict.log" 2>&1; then
-  fail "strict mode must refuse to start when xgboost_version is missing"
-fi
+# Guard against a strict-mode regression that boots anyway: `timeout`
+# reaps the orphan instead of hanging the suite (rc 124 = stayed alive).
+strict_rc=0
+XGBOOSTER_STRICT_VERSION=1 timeout -k 2 10 "$BIN" --models-dir "$STRICT_MODELS" \
+  --lib "$LIB_PATH" --addr "$AUX_ADDR" >"$WORK/strict.log" 2>&1 || strict_rc=$?
+[ "$strict_rc" -ne 124 ] || fail "strict mode kept serving; timeout killed orphan"
+[ "$strict_rc" -ne 0 ] || fail "strict mode must refuse to start when xgboost_version is missing"
 expect_contains "$(cat "$WORK/strict.log")" "no xgboost_version" "strict refusal log"
 
 srv_start "$AUX_ADDR" "$STRICT_MODELS"
@@ -212,12 +215,17 @@ expect_code 200 "$code" "non-strict mode serves the same artifact"
 srv_stop
 
 echo "== rate limit recovery after 429 =="
-srv_start "$RL_ADDR" "$WORK_MODELS" XGBOOSTER_RATE_LIMIT_RPS=2 XGBOOSTER_RATE_BURST=1
+RL_RPS=2
+RL_BURST=1
+# A token refills within 1/RPS seconds; the fixed margin absorbs jitter.
+RL_RECOVERY="$(awk -v rps="$RL_RPS" -v margin=0.3 'BEGIN { printf "%.2f", 1 / rps + margin }')"
+srv_start "$RL_ADDR" "$WORK_MODELS" \
+  XGBOOSTER_RATE_LIMIT_RPS="$RL_RPS" XGBOOSTER_RATE_BURST="$RL_BURST"
 code=$(http_code POST "http://$RL_ADDR/predict" "$(req risk_score)")
 expect_code 200 "$code" "first predict consumes the single burst token"
 code=$(http_code POST "http://$RL_ADDR/predict" "$(req risk_score)")
 expect_code 429 "$code" "immediate second predict -> 429"
-sleep 0.8 # at rps=2 a token refills within 0.5s
+sleep "$RL_RECOVERY" # 1/RL_RPS + margin, stays correct if RL_RPS is retuned
 code=$(http_code POST "http://$RL_ADDR/predict" "$(req risk_score)")
 expect_code 200 "$code" "predict succeeds after token refill"
 srv_stop

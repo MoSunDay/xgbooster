@@ -1,6 +1,6 @@
 # agents
 
-Commit: f2e6dee
+Commit: 9f69dde
 
 > 状态说明:首个实现已落地(XGBoost 训练→制品→Rust FFI 推理全链路 MVP),以下概述已按实际实现复核修正。级联架构中的规则层与 LLM 难例层仍为规划。
 
@@ -18,7 +18,7 @@ Commit: f2e6dee
 
 ## 模块索引
 
-- `train/xgbooster_train/`:训练管线。入口 `train.py`(`PYTHONPATH=train .venv/bin/python -m xgbooster_train.train --models-dir models [--trials 12]`,默认 synthetic risk_score;`--dataset adult` 训练 UI 真实数据集,制品名 `adult_income`)。`adult.py` 为 Adult 数据装载与 schema 推导(纯函数)。
+- `train/xgbooster_train/`:训练管线。入口 `train.py`(`PYTHONPATH=train .venv/bin/python -m xgbooster_train.train --models-dir models [--trials 12]`,默认 synthetic risk_score;`--dataset adult` 训练 UCI 真实数据集,制品名 `adult_income`)。`adult.py` 为 Adult 数据装载与 schema 推导(纯函数)。
 - `datasets/adult/`:UCI Adult 真实数据集 gzip 入库(adult.data.gz / adult.test.gz,勿改动内容;语义与重下载见其 README.md)。
 - `infer/src/`:推理服务。`ffi.rs`(libxgboost C API 薄封装)、`features.rs`(manifest 解析 + schema 驱动 JSON→特征向量)、`registry.rs`(多模型多版本扫描/解析/热替换)、`guard.rs`(令牌桶限流+并发上限)与 `throttle.rs`(warn 日志限频)、`predict.rs`(判断入口纯函数)、`http.rs`(axum 路由)、`main.rs`(组装)。
 - `infer/tests/consistency.rs` + `tests/consistency/run.sh`:Python↔Rust 预测一致性(遍历 models/ 下全部模型,逐模型最新版 holdout 对拍,容差 1e-6)与逐模型 HTTP 冒烟。

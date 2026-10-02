@@ -22,27 +22,33 @@ req() { printf '{"model":"%s","features":%s}' "$1" "$FEATURES_OK"; }
 
 latest="$(latest_version "$MODEL_DIR")"
 oldest="$(oldest_version "$MODEL_DIR")"
-count="$(version_count "$MODEL_DIR")"
-log "fixtures: $count versions, latest=$latest, oldest=$oldest"
+# /models serves every version of every model under models/, so the exact
+# count spans all model dirs (risk_score today, plus any real-data models).
+count="$(find "$MODELS_DIR" -mindepth 2 -maxdepth 2 -type d | wc -l | tr -d '[:space:]')"
+names="$(find "$MODELS_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n' | sort | paste -sd, -)"
+log "fixtures: $count versions across [$names], risk_score latest=$latest, oldest=$oldest"
 
 srv_start "$ADDR" "$MODELS_DIR"
 
 echo "== GET /models structure =="
 code=$(http_body "$OUT" GET "$BASE/models")
 expect_code 200 "$code" "GET /models"
-assert_py "$OUT" "$count" "$latest" "$oldest" <<'PYEOF'
+assert_py "$OUT" "$count" "$latest" "$oldest" "$names" <<'PYEOF'
 import json
 import sys
 
 models = json.load(open(sys.argv[1]))["models"]
 want_count = int(sys.argv[2])
 latest, oldest = sys.argv[3], sys.argv[4]
+want_names = set(filter(None, sys.argv[5].split(",")))
 assert len(models) == want_count, f"want {want_count} models, got {len(models)}"
 keys = [m["key"] for m in models]
 assert keys == sorted(keys), f"not sorted by key: {keys}"
 assert f"risk_score@{latest}" in keys, f"latest missing: {keys}"
 assert f"risk_score@{oldest}" in keys, f"oldest missing: {keys}"
-assert all(m["name"] == "risk_score" and "metrics" in m for m in models)
+assert {m["name"] for m in models} == want_names, \
+    f"want names {sorted(want_names)}, got {sorted({m['name'] for m in models})}"
+assert all("metrics" in m for m in models)
 print(f"models ok: {keys}")
 PYEOF
 

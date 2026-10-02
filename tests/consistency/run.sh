@@ -25,7 +25,8 @@ if [ -z "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
   PYTHONPATH=train .venv/bin/python -m xgbooster_train.train --models-dir models --trials 0
 fi
 
-LATEST_VERSION=$(.venv/bin/python - "$MODELS_DIR/risk_score" <<'PYEOF'
+latest_version_of() { # latest_version_of MODEL_DIR -> newest version name
+  .venv/bin/python - "$1" <<'PYEOF'
 import pathlib
 import sys
 
@@ -44,21 +45,22 @@ if not names:
     raise SystemExit("no model version directories found")
 print(max(names, key=sort_key))
 PYEOF
-)
-ARTIFACT="$MODELS_DIR/risk_score/$LATEST_VERSION"
-HOLDOUT="$ARTIFACT/holdout.csv"
-MANIFEST="$ARTIFACT/manifest.json"
-echo "== latest artifact: $ARTIFACT =="
+}
 
-echo "== building predict request from first holdout row =="
-.venv/bin/python - "$MANIFEST" "$HOLDOUT" /tmp/predict_req.json <<'PYEOF'
+# build_request MODEL OUT_FILE: JSON /predict body from the first holdout row
+# of the model's latest artifact (empty cells -> null, matching NaN training).
+build_request() {
+  local model="$1" out="$2"
+  local artifact="$MODELS_DIR/$model/$(latest_version_of "$MODELS_DIR/$model")"
+  .venv/bin/python - "$model" "$artifact/manifest.json" \
+    "$artifact/holdout.csv" "$out" <<'PYEOF'
 import csv
 import json
 import sys
 
-manifest = json.load(open(sys.argv[1]))
-names = {f["name"]: f["type"] for f in manifest["feature_schema"]}
-with open(sys.argv[2], newline="") as fh:
+model, manifest_path, holdout_path, out_path = sys.argv[1:5]
+manifest = json.load(open(manifest_path))
+with open(holdout_path, newline="") as fh:
     rows = list(csv.reader(fh))
 header, data = rows[0], rows[1]
 features = {}
@@ -71,10 +73,11 @@ for f in manifest["feature_schema"]:
             features[f["name"]] = float(cell)
         except ValueError:
             features[f["name"]] = None
-request = {"model": "risk_score", "features": features}
-json.dump(request, open(sys.argv[3], "w"))
+request = {"model": model, "features": features}
+json.dump(request, open(out_path, "w"))
 print("request:", json.dumps(request))
 PYEOF
+}
 
 echo "== starting server =="
 SERVER_PID=""
@@ -97,20 +100,39 @@ for _ in $(seq 1 100); do
 done
 
 echo "== GET /models =="
-curl -sf "http://$ADDR/models" | .venv/bin/python -m json.tool
+curl -sf "http://$ADDR/models" -o /tmp/models.json
+.venv/bin/python -m json.tool < /tmp/models.json
+MODEL_NAMES=$(find "$MODELS_DIR" -mindepth 1 -maxdepth 1 -type d \
+  ! -name '.*' -printf '%f\n' | sort)
+.venv/bin/python - "$MODELS_DIR" /tmp/models.json <<'PYEOF'
+import json
+import pathlib
+import sys
 
-echo "== POST /predict =="
-curl -sf -X POST "http://$ADDR/predict" -H 'Content-Type: application/json' \
-  -d @/tmp/predict_req.json -o /tmp/predict_resp.json
-cat /tmp/predict_resp.json; echo
-.venv/bin/python - "$MANIFEST" "$HOLDOUT" /tmp/predict_resp.json <<'PYEOF'
+models_dir = pathlib.Path(sys.argv[1])
+listed = {m["name"] for m in json.load(open(sys.argv[2]))["models"]}
+on_disk = {p.name for p in models_dir.iterdir() if p.is_dir()}
+assert listed == on_disk, f"/models mismatch: {listed} vs {on_disk}"
+print(f"/models lists every model: {sorted(listed)}")
+PYEOF
+
+echo "== POST /predict smoke per model =="
+for MODEL in $MODEL_NAMES; do
+  ARTIFACT="$MODELS_DIR/$MODEL/$(latest_version_of "$MODELS_DIR/$MODEL")"
+  echo "-- model $MODEL ($ARTIFACT)"
+  build_request "$MODEL" /tmp/predict_req.json
+  curl -sf -X POST "http://$ADDR/predict" -H 'Content-Type: application/json' \
+    -d @/tmp/predict_req.json -o /tmp/predict_resp.json
+  cat /tmp/predict_resp.json; echo
+  .venv/bin/python - "$ARTIFACT" /tmp/predict_resp.json <<'PYEOF'
 import csv
 import json
 import sys
 
-manifest = json.load(open(sys.argv[1]))
+artifact = sys.argv[1]
+manifest = json.load(open(f"{artifact}/manifest.json"))
 names = {f["name"] for f in manifest["feature_schema"]}
-with open(sys.argv[2], newline="") as fh:
+with open(f"{artifact}/holdout.csv", newline="") as fh:
     rows = list(csv.reader(fh))
 header, data = rows[0], rows[1]
 others = [i for i, h in enumerate(header) if h not in names]
@@ -123,11 +145,12 @@ for i in reversed(others):
 if score_idx is None:
     score_idx = others[-1]
 expected = float(data[score_idx])
-got = json.load(open(sys.argv[3]))["score"]
+got = json.load(open(sys.argv[2]))["score"]
 diff = abs(got - expected)
 assert diff < 1e-6, f"smoke mismatch: got {got}, expected {expected}, diff {diff}"
 print(f"smoke score ok: got={got} expected={expected} diff={diff}")
 PYEOF
+done
 
 echo "== POST /admin/reload =="
 curl -sf -X POST "http://$ADDR/admin/reload" | .venv/bin/python -m json.tool

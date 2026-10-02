@@ -1,13 +1,17 @@
-"""End-to-end pipeline: generate -> split -> tune -> train -> evaluate -> write."""
+"""End-to-end pipeline: load -> split -> tune -> train -> evaluate -> write."""
 
 import argparse
+import pathlib
 
 import numpy as np
 import xgboost as xgb
 
-from xgbooster_train import artifact, dataset, evaluate, features
+from xgbooster_train import adult, artifact, dataset, evaluate, features
 
 MODEL_NAME = "risk_score"
+ADULT_MODEL_NAME = "adult_income"
+ADULT_N_TRAIN = 28000
+ADULT_N_VALID = 4561
 NUM_BOOST_ROUND = 2000
 TUNE_NUM_BOOST_ROUND = 300
 EARLY_STOP_ROUNDS = 30
@@ -91,20 +95,70 @@ def train_final(x_tr, y_tr, x_va, y_va, params: dict, seed: int):
     return bst, best_iteration
 
 
+def _require_file(path: pathlib.Path) -> pathlib.Path:
+    if path.is_file():
+        return path
+    raise SystemExit(
+        f"missing dataset file: {path}\n"
+        f"download it from {adult.ADULT_URL} (gzip it in place), e.g.\n"
+        f"  curl --proxy socks5h://127.0.0.1:1080 -o {path} "
+        f"{adult.ADULT_URL}{path.name}"
+    )
+
+
+def _load_synthetic(seed: int):
+    """Assemble the synthetic dataset: schema + train/valid/holdout splits."""
+    schema = features.FEATURE_SCHEMA
+    samples, labels = dataset.generate(seed=seed)
+    (tr, va, ho) = dataset.split(samples, labels)
+    return MODEL_NAME, schema, tr, va, ho
+
+
+def _load_adult(datasets_dir: str):
+    """Assemble the Adult dataset: train/valid from adult.data, holdout =
+    the full independent adult.test file (no leakage into tuning)."""
+    base = pathlib.Path(datasets_dir) / "adult"
+    samples, labels = adult.load(_require_file(base / "adult.data.gz"))
+    holdout = adult.load(_require_file(base / "adult.test.gz"))
+    # 32561 rows total: head 28000 train, mid 4561 valid, empty tail.
+    (tr, va, tail) = dataset.split(samples, labels,
+                                   n_train=ADULT_N_TRAIN, n_valid=ADULT_N_VALID)
+    if tail[0]:
+        raise SystemExit(
+            f"adult.data has {len(samples)} rows; expected exactly "
+            f"{ADULT_N_TRAIN + ADULT_N_VALID} so the tail split is empty")
+    # Schema derives from train rows only; unseen categories -> NaN.
+    return ADULT_MODEL_NAME, adult.build_schema(tr[0]), tr, va, holdout
+
+
+def _load_dataset(kind: str, datasets_dir: str, seed: int):
+    """Dispatch on --dataset; returns (name, schema, train, valid, holdout)."""
+    if kind == "adult":
+        return _load_adult(datasets_dir)
+    return _load_synthetic(seed)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Train the risk-score XGBoost model and write an artifact.")
+        description="Train an XGBoost model and write a versioned artifact.")
     parser.add_argument("--models-dir", default="models",
                         help="root directory for model artifacts")
+    parser.add_argument("--dataset", choices=("synthetic", "adult"),
+                        default="synthetic",
+                        help="dataset to train on (synthetic risk_score or "
+                             "UCI Adult adult_income)")
+    parser.add_argument("--datasets-dir", default="datasets",
+                        help="root directory holding adult/*.gz datasets")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--trials", type=int, default=12,
                         help="optuna trials (0 skips tuning)")
     args = parser.parse_args()
 
-    schema = features.FEATURE_SCHEMA
-    samples, labels = dataset.generate(seed=args.seed)
-    ((tr_samples, tr_labels), (va_samples, va_labels),
-     (ho_samples, ho_labels)) = dataset.split(samples, labels)
+    name, schema, tr, va, ho = _load_dataset(args.dataset, args.datasets_dir,
+                                             args.seed)
+    (tr_samples, tr_labels), (va_samples, va_labels) = tr, va
+    (ho_samples, ho_labels) = ho
+    print(f"dataset: {args.dataset} (model {name})")
     x_tr = features.to_matrix(tr_samples, schema)
     x_va = features.to_matrix(va_samples, schema)
     x_ho = features.to_matrix(ho_samples, schema)
@@ -136,7 +190,7 @@ def main() -> None:
 
     metrics = {"auc": float(hold_auc), "ks": float(hold_ks),
                "n_holdout": len(ho_samples)}
-    out_dir = artifact.write_artifact(args.models_dir, MODEL_NAME, bst, schema,
+    out_dir = artifact.write_artifact(args.models_dir, name, bst, schema,
                                       metrics, ho_samples, ho_labels, scores)
     print(f"artifact: {out_dir}")
 
